@@ -310,18 +310,25 @@ class CanData:
 
 
 class CanDecoder:
-    def __init__(self, dbc_url: str, can_url: str):
-        self.dbc_url = dbc_url
-        self.can_url = can_url
-        self.dbcs = self.__load_dbc_multi(dbc_url)
-        self.blf_urls, self.asc_urls = self.__load_can_multi(can_url)
+    def __init__(self, dbc_url: str, can_url: str):  # 构造函数，初始化对象
+        self.dbc_url = dbc_url  # 将传入的dbc_url参数赋值给对象的dbc_url属性
+        self.can_url = can_url  # 将传入的can_url参数赋值给对象的can_url属性
+        self.dbcs = self.__load_dbc_multi(
+            dbc_url
+        )  # 调用私有方法__load_dbc_multi加载dbc文件，并将结果赋值给对象的dbcs属性
+        self.blf_urls, self.asc_urls = self.__load_can_multi(
+            can_url
+        )  # 调用私有方法__load_can_multi加载can文件，并将结果分别赋值给对象的blf_urls和asc_urls属性
 
     def __load_dbc_single(self, dbc_url: StringPathLike) -> Tuple[str, Database]:
         """
         Load a DBC file and return the database object.
         """
+        # 打开指定路径的DBC文件，以只读模式("r")和指定的编码格式(ENCODING)读取文件内容
         with open(dbc_url, "r", encoding=ENCODING) as f:
+            # 使用cantools库的db模块加载DBC文件内容，指定文件格式为"dbc"，并设置严格模式为False
             dbc_content = cantools.db.load(f, database_format="dbc", strict=False)
+        # 返回DBC文件的路径和加载的数据库对象
         return dbc_url, dbc_content
 
     def __load_dbc_multi(
@@ -329,30 +336,46 @@ class CanDecoder:
         dbc_url: Union[StringPathLike, List[StringPathLike]],
     ) -> List[Tuple[str, Database]]:
 
+        # 初始化一个空列表用于存储加载的数据库
         dbcs = []
+        # 检查dbc_url的类型，如果是字符串路径
         if isinstance(dbc_url, StringPathLike):
+            # 检查该路径是否是一个目录
             if os.path.isdir(dbc_url):
+                # 获取目录下所有以.dbc结尾的文件路径
                 dbc_urls = [
                     os.path.join(dbc_url, file)
                     for file in os.listdir(dbc_url)
                     if file.endswith(".dbc")
                 ]
+                # 使用map函数并行加载这些.dbc文件
                 dbcs.extend(map(self.__load_dbc_single, dbc_urls))
 
+            # 如果是一个文件
             elif os.path.isfile(dbc_url):
+                # 将该文件路径添加到列表中
                 dbc_urls = [dbc_url]
+                # 注释掉的代码：原本是直接调用__load_dbc_single函数加载单个文件
                 # dbcs.append(__load_dbc_single(dbc_url))
             else:
+                # 如果既不是目录也不是文件，抛出异常
                 raise ValueError(f"Invalid DBC file path: {dbc_url}")
+        # 如果dbc_url是列表
         elif isinstance(dbc_url, list):
+            # 过滤出所有以.dbc结尾的文件路径
             dbc_urls = [url for url in dbc_url if url.endswith(".dbc")]
+            # 注释掉的代码：原本是直接调用__load_dbc_single函数加载列表中的文件
             # dbcs.extend(map(__load_dbc_single, dbc_url))
         else:
+            # 如果dbc_url既不是字符串也不是列表，抛出异常
             raise ValueError(f"Invalid DBC file path: {dbc_url}")
+        # 导入ThreadPoolExecutor用于并行处理
         from concurrent.futures import ThreadPoolExecutor
 
+        # 使用ThreadPoolExecutor并行加载所有.dbc文件
         with ThreadPoolExecutor() as executor:
             dbcs = list(executor.map(self.__load_dbc_single, dbc_urls))
+        # 返回加载的数据库列表
         return dbcs
 
     def __load_can_multi(
@@ -368,12 +391,14 @@ class CanDecoder:
         Returns:
             Tuple[List[StringPathLike], List[StringPathLike]]: 包含 .blf 文件路径列表和 .asc 文件路径列表的元组。
         """
-        blf_urls = []
-        asc_urls = []
+        blf_urls = []  # 存储所有 .blf 文件路径的列表
+        asc_urls = []  # 存储所有 .asc 文件路径的列表
 
         def __process_path(path: StringPathLike):
             """处理单个路径，分类为 .blf 或 .asc 文件"""
             if os.path.isdir(path):
+                # 如果路径是目录，列出目录中的所有文件
+                files = os.listdir(path)
                 # 使用列表推导式和过滤器一次性处理文件
                 files = os.listdir(path)
                 blf_urls.extend(
@@ -416,9 +441,9 @@ class CanDecoder:
         """
         Decode CAN data using the provided DBC data.
         """
-        from asammdf import Signal
+        from asammdf import Signal  # 从 asammdf 库导入 Signal 类
 
-        decoded = {}
+        decoded = {}  # 初始化一个空字典用于存储解码后的信号数据
         signal_names_set = (
             set(signal_names) if signal_names else None
         )  # 使用集合加速查找
@@ -475,16 +500,22 @@ class CanDecoder:
             save_dir (str): Directory to save the output files.
             save_formats (tuple): File formats to save (e.g., .csv, .parquet, .mat).
         """
+        # 检查保存目录是否存在，如果不存在则创建
         if not os.path.exists(save_dir):
             os.makedirs(save_dir)
 
+        # 导入asammdf库中的MDF类和scipy库中的io模块
         from asammdf import MDF
         import scipy.io as sio
 
+        # 创建一个MDF对象
         mdf = MDF()
+        # 将解码后的信号添加到MDF对象中
         mdf.append(signals)
+        # 将MDF对象转换为DataFrame，指定栅格步长
         df = mdf.to_dataframe(raster=step)
 
+        # 生成基础文件名，由DBC文件名和CAN文件名组合而成
         base_filename = (
             os.path.splitext(os.path.basename(dbc_file_url))[0]
             + "_"
@@ -500,11 +531,15 @@ class CanDecoder:
 
         # 遍历保存格式并调用对应的保存方法
         for save_format in save_formats:
+            # 生成完整的文件路径
             __file_url = os.path.join(save_dir, f"{base_filename}{save_format}")
+            # 获取对应的保存方法
             save_method = save_methods.get(save_format)
             if save_method:
+                # 调用保存方法
                 save_method(__file_url)
             else:
+                # 如果不支持的文件格式，抛出异常
                 raise ValueError(f"Unsupported save format: {save_format}")
 
     def read_single_can(
@@ -518,7 +553,7 @@ class CanDecoder:
         step: float = 0.002,
         save_dir: str = r"./can_decoded",
         save_formats: Tuple[str, ...] = (".csv", ".parquet", ".mat"),
-    ) -> None:
+    ) -> List[Dict[str, Any]] | None:
         """
         Process a single CAN file (BLF or ASC) and save the decoded data.
 
@@ -549,10 +584,9 @@ class CanDecoder:
             self.__save_to(
                 dbc_url, log_file_path, signals, step, save_dir, save_formats
             )
-
+            return signals
         except Exception as e:
             print(f"Error processing file {log_file_path}: {e}")
-        return signals
 
     def read_can_files(
         self,
