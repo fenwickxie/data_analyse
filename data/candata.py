@@ -225,33 +225,36 @@ class CanData:
         Returns:
             _type_: _description_
         """
-        # 根据get_first_time方法计算的时间戳，获取对应的电机转速值
-        # 通过前轮轮速换算前电机转速
-        front_motor_speed = (
-            (
-                stage.loc[slip_time, "WhlSpdFL_122"]
-                + stage.loc[slip_time, "WhlSpdFR_122"]
-            )
-            / 2
-            * 1000
-            * FRONT_MOTOR_TRANSMISSION_RATIO
-            / (2 * np.pi * R)
-            * 60
-        )
-        # 通过后轮轮速换算后电机转速
-        rear_motor_speed = (
-            (
-                stage.loc[slip_time, "WhlSpdRL_122"]
-                + stage.loc[slip_time, "WhlSpdRR_122"]
-            )
-            / 2
-            * 1000
-            * REAR_MOTOR_TRANSMISSION_RATIO
-            / (2 * np.pi * R)
-            * 60
-        )
+        # # 根据get_first_time方法计算的时间戳，获取对应的电机转速值
+        # # 通过前轮轮速换算前电机转速
+        # stage_indexed=stage.set_index("timestamps")
+        # front_motor_speed = (
+        #     (
+        #         stage.loc[slip_time, "WhlSpdFL_122"]
+        #         + stage.loc[slip_time, "WhlSpdFR_122"]
+        #     )
+        #     / 2
+        #     * 1000
+        #     * FRONT_MOTOR_TRANSMISSION_RATIO
+        #     / (2 * np.pi * R)
+        #     * 60
+        # )
+        # # 通过后轮轮速换算后电机转速
+        # rear_motor_speed = (
+        #     (
+        #         stage.loc[slip_time, "WhlSpdRL_122"]
+        #         + stage.loc[slip_time, "WhlSpdRR_122"]
+        #     )
+        #     / 2
+        #     * 1000
+        #     * REAR_MOTOR_TRANSMISSION_RATIO
+        #     / (2 * np.pi * R)
+        #     * 60
+        # )
+        front_motor_speed=stage.loc[slip_time, "FMSpd_242"]
+        rear_motor_speed=stage.loc[slip_time, "RMSpd_250"]
         # 计算前后电机转速差值
-        return rear_motor_speed - front_motor_speed
+        return front_motor_speed - rear_motor_speed
 
     def get_single_file_metrics(
         self,
@@ -270,6 +273,7 @@ class CanData:
         stages = self.get_file_stage(data, slice_idx)
 
         for stage in stages:
+            stage=stage.set_index("timestamps")
             # 计算每个阶段的指标
             stage_metrics = pd.DataFrame()
             # 方向盘转角变化量
