@@ -74,7 +74,7 @@ class CanData:
 
         return grouped_files
 
-    def get_stage_idxs(self, data, stage_filters: dict) -> list[tuple]:
+    def get_stage_idxs(self, data: pd.DataFrame, stage_filters: dict) -> list[tuple]:
         """
         根据输入参数筛选数据，支持不定数量的信号筛选，并获取从 min 增长到 max 的范围数据。
 
@@ -93,15 +93,30 @@ class CanData:
             min_val, max_val = value_range
 
             # 标记信号值是否从 min 开始逐渐增长到 max
+            # data[f"{signal_name}_flag"] = False
+            # in_growth_phase = False
+            # for i in range(len(data)):
+            #     if data[signal_name].iloc[i] == min_val:
+            #         in_growth_phase = True
+            #     if in_growth_phase and data[signal_name].iloc[i] >= max_val:
+            #         in_growth_phase = False
+            #     data[f"{signal_name}_flag"].iloc[i] = in_growth_phase
+
+            # 标记信号值是否从 min 开始逐渐增长到 max
             data[f"{signal_name}_flag"] = False
             in_growth_phase = False
             for i in range(len(data)):
-                if data[signal_name].iloc[i] >= min_val:
+                _v = int(data[signal_name].iloc[i])
+                if _v == min_val:
                     in_growth_phase = True
-                if in_growth_phase and data[signal_name].iloc[i] >= max_val:
-                    in_growth_phase = False
-                data[f"{signal_name}_flag"].iloc[i] = in_growth_phase
-
+                if in_growth_phase:
+                    if _v < min_val or _v > max_val:
+                        in_growth_phase = False
+                    elif _v == max_val:
+                        in_growth_phase = False
+                        data[f"{signal_name}_flag"].iloc[i] = True
+                    else:
+                        data[f"{signal_name}_flag"].iloc[i] = True
             # 更新综合标记
             data["combined_flag"] &= data[f"{signal_name}_flag"]
 
@@ -199,14 +214,20 @@ class CanData:
 
         return closest_idx
 
-    def get_slip_whlspd(self, stage, slip_time):
-        whls = ["WhlSpdFL_122", "WhlSpdFR_122", "WhlSpdRL_122", "WhlSpdRR_122"]
+    def get_slip_whlspd(
+        self,
+        stage,
+        slip_time,
+        whls=["WhlSpdFL_122", "WhlSpdFR_122", "WhlSpdRL_122", "WhlSpdRR_122"],
+    ):
+
         stage_metrics = {}
-        # 根据get_slip_time方法计算的时间戳，获取对应的WhlSpd值
-        for whl in whls:
-            # 获取对应的WhlSpd值
-            whlspd_value = stage.loc[slip_time, whl]
-            stage_metrics[f"slip_{whl}"] = whlspd_value
+        # # 根据get_slip_time方法计算的时间戳，获取对应的WhlSpd值
+        # for whl in whls:
+        #     # 获取对应的WhlSpd值
+        #     whlspd_value = stage.loc[slip_time, whl]
+        #     stage_metrics[f"slip_{whl}"] = whlspd_value
+        stage_metrics[f"slip_WhlSpd"] = max(stage.loc[slip_time, whls].values)
         return stage_metrics
 
     def get_monitor_diff(self, stage, slip_time):
@@ -251,8 +272,8 @@ class CanData:
         #     / (2 * np.pi * R)
         #     * 60
         # )
-        front_motor_speed=stage.loc[slip_time, "FMSpd_242"]
-        rear_motor_speed=stage.loc[slip_time, "RMSpd_250"]
+        front_motor_speed = stage.loc[slip_time, "FMSpd_242"]
+        rear_motor_speed = stage.loc[slip_time, "RMSpd_250"]
         # 计算前后电机转速差值
         return front_motor_speed - rear_motor_speed
 
@@ -273,12 +294,12 @@ class CanData:
         stages = self.get_file_stage(data, slice_idx)
 
         for stage in stages:
-            stage=stage.set_index("timestamps")
+            stage = stage.set_index("timestamps")
             # 计算每个阶段的指标
             stage_metrics = pd.DataFrame()
             # 方向盘转角变化量
-            __change_metrics = self.get_start2end_change(stage)
-            for signal, value in __change_metrics.items():
+            _change_metrics = self.get_start2end_change(stage)
+            for signal, value in _change_metrics.items():
                 stage_metrics[signal] = [value]
             # 首次滑转时间
             slip_time = self.get_slip_time(stage)
@@ -286,10 +307,17 @@ class CanData:
             # 首次滑转电机转速差
             stage_metrics["monitor_diff"] = self.get_monitor_diff(stage, slip_time)
             # 首次滑转轮速
-            __whl_metrics = self.get_slip_whlspd(stage, slip_time)
-            for __whl, whl_spd in __whl_metrics.items():
-                stage_metrics[__whl] = whl_spd
-
+            _whl_metrics = self.get_slip_whlspd(stage, slip_time)
+            for _whl, whl_spd in _whl_metrics.items():
+                stage_metrics[_whl] = whl_spd
+            # 计算stage内平均油门throttle_mean
+            throttle_mean = stage["AccPdlPosn_342"].mean()
+            # 将列表[20,30,40,50,60,70,80,90,100]中最接近throttle_mean的值，作为此阶段的油门开度
+            throttle = min(
+                [20, 30, 40, 50, 60, 70, 80, 90, 100],
+                key=lambda x: abs(x - throttle_mean),
+            )
+            stage_metrics["throttle"] = throttle
             metrics_df = pd.concat([metrics_df, stage_metrics], ignore_index=True)
         # 将所有阶段的指标合并为一个DataFrame
         return metrics_df

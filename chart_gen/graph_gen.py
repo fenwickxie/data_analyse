@@ -9,9 +9,12 @@ version: 1.0
 """
 
 
+import pandas as pd
+
+
 class GraphGen:
-    def __init__(self, data):
-        self.data = data
+    def __init__(self, metrics: pd.DataFrame):
+        self.data = metrics
 
     def generate_graph(self):
         # 生成图表的逻辑
