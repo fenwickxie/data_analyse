@@ -8,6 +8,7 @@ filename: can_analysis.py
 version: 1.0
 """
 
+from itertools import product
 import os
 import numpy as np
 import pandas as pd
@@ -46,23 +47,24 @@ class CanData:
 
     def group_files_by_conditions(
         self,
-        conditions: dict = {
-            "on_ice": ["on", "冰"],
-            "on_snow": ["on", "雪"],
-            "off_ice": ["off", "冰"],
-            "off_snow": ["off", "雪"],
-        },
+        keywords: list = [["on", "off"], ["冰", "雪"],["eco","sport"]], 
     ):
         """
-        根据条件对文件进行分组。
+        根据关键字列表自动生成条件组合，并对文件进行分组。
 
         Args:
-            conditions (dict): 分组条件字典，格式为 {group_name: [keywords]}。
-                            每个分组的名称对应一组关键词，文件名中包含任意关键词即归入该分组。
+            keywords (list): 关键字列表，用于生成分组条件。
 
         Returns:
             dict: 包含分组后的文件列表，格式为 {group_name: [file1, file2, ...]}。
         """
+
+        # 自动生成条件组合
+        conditions = {
+            "_".join(combination): list(combination)
+            for combination in product(*keywords)
+        }
+
         grouped_files = {group_name: [] for group_name in conditions}
 
         for file in self.files:

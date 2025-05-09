@@ -13,11 +13,12 @@ import pandas as pd
 
 
 class GraphGen:
-    def __init__(self, metrics: pd.DataFrame):
+    def __init__(self, metrics: dict[str, pd.DataFrame]):
+
         self.data = metrics
 
-    def generate_graph(self):
-        # 生成图表的逻辑
+    def generate_graph(self, horizontal_axis="throttle", vertical_axis="latency"):
+
         pass
 
     def save_graph(self, filename):
