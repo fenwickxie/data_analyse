@@ -14,7 +14,7 @@ import numpy as np
 import pandas as pd
 import os
 import platform
-import data
+import can
 import cantools
 from typing import List, Dict, Any, Optional, Tuple, TypeAlias, Union
 from cantools.database import Database
@@ -344,7 +344,7 @@ class CanData:
 
 
 class CanDecoder:
-    def __init__(self, dbc_url: str, can_url: str):  # 构造函数，初始化对象
+    def __init__(self, dbc_url: StringPathLike, can_url: StringPathLike):  # 构造函数，初始化对象
         self.dbc_url = dbc_url  # 将传入的dbc_url参数赋值给对象的dbc_url属性
         self.can_url = can_url  # 将传入的can_url参数赋值给对象的can_url属性
         self.dbcs = self.__load_dbc_multi(
@@ -605,9 +605,9 @@ class CanDecoder:
         try:
             # 根据文件类型加载日志数据
             if file_type == "blf":
-                log_data = data.BLFReader(log_file_path)
+                log_data = can.BLFReader(log_file_path)
             elif file_type == "asc":
-                log_data = data.ASCReader(log_file_path)
+                log_data = can.ASCReader(log_file_path)
             else:
                 raise ValueError(f"Unsupported file type: {file_type}")
 
@@ -733,4 +733,5 @@ class CanDecoder:
 
 if __name__ == "__main__":
 
-    pass
+    candeocder=CanDecoder("/home/p30021181206/uk.dbc","/home/p30021181206/Pictures/share_folder/20250430_SZ_UKEB")
+    candeocder.read_can_files(save_dir="/home/p30021181206/Documents/data/",save_formats=('.csv','.parquet',))
