@@ -44,10 +44,12 @@ class CanData:
             ]
 
         self.grouped_files = self.group_files_by_conditions()
+        self.statics = pd.DataFrame()
+        self.all_metrics = {}
 
     def group_files_by_conditions(
         self,
-        keywords: list = [["on", "off"], ["冰", "雪"],["eco","sport"]], 
+        keywords: list = [["on", "off"], ["冰", "雪"], ["eco", "sport"]],
     ):
         """
         根据关键字列表自动生成条件组合，并对文件进行分组。
@@ -59,7 +61,7 @@ class CanData:
             dict: 包含分组后的文件列表，格式为 {group_name: [file1, file2, ...]}。
         """
 
-        # 自动生成条件组合
+        # 生成条件组合
         conditions = {
             "_".join(combination): list(combination)
             for combination in product(*keywords)
@@ -153,7 +155,7 @@ class CanData:
         return stages
 
     def get_statics(self, stage, signal_name):
-        self.statics = pd.DataFrame()
+
         # 计算信号的平均值
         mean_value = stage[signal_name].mean()
 
@@ -326,7 +328,7 @@ class CanData:
 
     def get_all_metrics(self):
         # 将所有文件中的指标合并为一个DataFrame
-        self.all_metrics = {}
+
         for group_name in self.grouped_files:
             grouped_files_metrics = pd.DataFrame()
             for file in self.grouped_files[group_name]:
