@@ -43,14 +43,14 @@ class CanData:
                 os.path.join(data, f) for f in os.listdir(data) if f.endswith(".csv")
             ]
 
-        self.grouped_files = self.group_files_by_conditions()
+        self.grouped_files = self.__group_files_by_conditions()
         self.statics = pd.DataFrame()
         self.all_metrics = {}
 
-    def group_files_by_conditions(
+    def __group_files_by_conditions(
         self,
         keywords: list = [["on", "off"], ["冰", "雪"], ["eco", "sport"]],
-    ):
+    ) -> dict[str, list]:
         """
         根据关键字列表自动生成条件组合，并对文件进行分组。
 
@@ -78,7 +78,7 @@ class CanData:
 
         return grouped_files
 
-    def get_stage_idxs(self, data: pd.DataFrame, stage_filters: dict) -> list[tuple]:
+    def get_stage_idxs(self, data: pd.DataFrame, stage_filters: dict[str,tuple]) -> list[tuple]:
         """
         根据输入参数筛选数据，支持不定数量的信号筛选，并获取从 min 增长到 max 的范围数据。
 
@@ -105,22 +105,39 @@ class CanData:
             #     if in_growth_phase and data[signal_name].iloc[i] >= max_val:
             #         in_growth_phase = False
             #     data[f"{signal_name}_flag"].iloc[i] = in_growth_phase
-
-            # 标记信号值是否从 min 开始逐渐增长到 max
+            # 标记信号值是否从 min 开始增长到 max，允许平台期（即值不降即可），但起步阶段不能有大段等于min_value的数据段
             data[f"{signal_name}_flag"] = False
             in_growth_phase = False
+            last_min_idx = None
+            growth_indices = []
             for i in range(len(data)):
                 _v = int(data[signal_name].iloc[i])
                 if _v == min_val:
+                    # 如果前一个也在增长阶段且也是min_val，则把前一个的flag改为False，避免大段min_val
+                    if in_growth_phase and int(data[signal_name].iloc[i-1]) == min_val:
+                        data.at[i-1, f"{signal_name}_flag"] = False
                     in_growth_phase = True
+                    data.at[i, f"{signal_name}_flag"] = True
+                    growth_indices = [i]
+                    continue
                 if in_growth_phase:
-                    if _v < min_val or _v > max_val:
+                    # 允许平台期，只要不降即可，并且数值不能减小
+                    if _v < data[signal_name].iloc[i-1]:  # 如果值下降
+                        # 如果值下降，之前的标记改回False
+                        for idx in growth_indices:
+                            data.at[idx, f"{signal_name}_flag"] = False
                         in_growth_phase = False
-                    elif _v == max_val:
+                        growth_indices = []
+                    elif _v >= min_val and _v <= max_val:  # 如果在范围内
+                        data.at[i, f"{signal_name}_flag"] = True
+                        growth_indices.append(i)
+                        if _v == max_val:  # 如果达到最大值，完成一个有效增长阶段
+                            in_growth_phase = False
+                            growth_indices = []
+                    else:  # 如果超过max_val
+                        # 只结束增长阶段，不改变之前的标记
                         in_growth_phase = False
-                        data[f"{signal_name}_flag"].iloc[i] = True
-                    else:
-                        data[f"{signal_name}_flag"].iloc[i] = True
+                        growth_indices = []
             # 更新综合标记
             data["combined_flag"] &= data[f"{signal_name}_flag"]
 
@@ -149,7 +166,7 @@ class CanData:
     def get_file_stage(self, data: pd.DataFrame, slice_idx) -> list[pd.DataFrame]:
         stages = []
         for start, end in slice_idx:
-            period = data.iloc[start:end]
+            period = data.loc[start:end]
             stages.append(period)
 
         return stages
@@ -189,7 +206,7 @@ class CanData:
         # 计算信号始末变化量
         for signal_name in signal_names:
             metrics[f"{signal_name}_change"] = (
-                stage.iloc[-1][signal_name] - stage.iloc[0][signal_name]
+                stage.loc[stage.index[-1],signal_name] - stage.loc[stage.index[0],signal_name]
             )
 
         return metrics
@@ -206,8 +223,8 @@ class CanData:
                 stage["timestamps"]
                 - (
                     (
-                        stage.loc[slice_idx[0][0]]["timestamps"]
-                        + stage.loc[slice_idx[0][1]]["timestamps"]
+                        stage.loc[slice_idx[0][0],"timestamps"]
+                        + stage.loc[slice_idx[0][1],"timestamps"]
                     )
                     / 2
                 )
@@ -285,7 +302,7 @@ class CanData:
         self,
         file_path,
         stage_filters={
-            "AccPdlPosn_342": (1, 40),
+            "AccPdlPosn_342": (0, 40),
         },
     ):
         data = pd.read_csv(file_path)
@@ -298,7 +315,7 @@ class CanData:
         stages = self.get_file_stage(data, slice_idx)
 
         for stage in stages:
-            stage = stage.set_index("timestamps")
+            # stage = stage.set_index("timestamps")
             # 计算每个阶段的指标
             stage_metrics = pd.DataFrame()
             # 方向盘转角变化量
@@ -335,7 +352,7 @@ class CanData:
                 single_file_metrics = self.get_single_file_metrics(
                     file,
                     {
-                        "AccPdlPosn_342": (1, 40),
+                        "AccPdlPosn_342": (0, 40),
                     },
                 )
                 grouped_files_metrics = pd.concat(
