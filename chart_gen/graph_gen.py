@@ -123,7 +123,7 @@ class GraphGen:
             for idx, df in enumerate(self.stages):
                 if df.empty:
                     continue
-                plt.figure(figsize=(10, 6))
+                plt.figure(figsize=(10, 3))
                 for vertical in vertical_axis:
                     if vertical in df.columns and horizontal_axis in df.columns:
                         plt.plot(df[horizontal_axis], df[vertical], label=vertical)
@@ -132,7 +132,8 @@ class GraphGen:
                 plt.ylabel("Value")
                 plt.legend()
                 plt.tight_layout()
-                plt.show()
+                plt.savefig(f"{self.save_path}/{idx}.png")
+            plt.show()
 
 
 if __name__ == "__main__":

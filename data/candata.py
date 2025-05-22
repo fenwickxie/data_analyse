@@ -38,10 +38,12 @@ class CanData:
         self.files = []
         if os.path.isfile(data):
             self.files.append(data)
+            self.data = [pd.read_csv(data)]
         elif os.path.isdir(data):
             self.files = [
                 os.path.join(data, f) for f in os.listdir(data) if f.endswith(".csv")
             ]
+            self.data = [pd.read_csv(f) for f in self.files]
 
         self.grouped_files = self.__group_files_by_conditions()
         self.statics = pd.DataFrame()
@@ -78,7 +80,9 @@ class CanData:
 
         return grouped_files
 
-    def get_stage_idxs(self, data: pd.DataFrame, stage_filters: dict[str,tuple]) -> list[tuple]:
+    def get_stage_idxs(
+        self, data: pd.DataFrame, stage_filters: dict[str, tuple]
+    ) -> list[tuple]:
         """
         根据输入参数筛选数据，支持不定数量的信号筛选，并获取从 min 增长到 max 的范围数据。
 
@@ -90,8 +94,8 @@ class CanData:
         """
         data["stage_marker"] = None  # 初始化阶段标记
         data["combined_flag"] = True  # 初始化综合标记
-        data["original_index"] = data.index  # 保存原始索引
 
+        start, end = data.index[0], data.index[-1]  # 获取数据段的起始和结束索引
         # 遍历信号筛选条件，逐个应用筛选
         for signal_name, value_range in stage_filters.items():
             min_val, max_val = value_range
@@ -108,22 +112,27 @@ class CanData:
             # 标记信号值是否从 min 开始增长到 max，允许平台期（即值不降即可），但起步阶段不能有大段等于min_value的数据段
             data[f"{signal_name}_flag"] = False
             in_growth_phase = False
-            last_min_idx = None
             growth_indices = []
-            for i in range(len(data)):
+            for i in range(start, end):
                 _v = int(data[signal_name].iloc[i])
                 if _v == min_val:
                     # 如果前一个也在增长阶段且也是min_val，则把前一个的flag改为False，避免大段min_val
-                    if in_growth_phase and int(data[signal_name].iloc[i-1]) == min_val:
-                        data.at[i-1, f"{signal_name}_flag"] = False
+                    if in_growth_phase and int(data.loc[i - 1, signal_name]) == min_val:
+                        data.at[i - 1, f"{signal_name}_flag"] = False
                     in_growth_phase = True
                     data.at[i, f"{signal_name}_flag"] = True
                     growth_indices = [i]
                     continue
                 if in_growth_phase:
                     # 允许平台期，只要不降即可，并且数值不能减小
-                    if _v < data[signal_name].iloc[i-1]:  # 如果值下降
-                        # 如果值下降，之前的标记改回False
+                    # 允许小幅波动：如果下降幅度在允许范围内（如1单位），则不视为终止增长
+                    if _v < data.loc[i - 1, signal_name]:
+                        # 判断是否为小幅波动（如下降不超过1单位）
+                        if data.loc[i - 1, signal_name] - _v <= 2:
+                            data.at[i, f"{signal_name}_flag"] = True
+                            growth_indices.append(i)
+                            continue
+                        # 否则视为终止增长阶段
                         for idx in growth_indices:
                             data.at[idx, f"{signal_name}_flag"] = False
                         in_growth_phase = False
@@ -134,7 +143,7 @@ class CanData:
                         if _v == max_val:  # 如果达到最大值，完成一个有效增长阶段
                             in_growth_phase = False
                             growth_indices = []
-                    else:  # 如果超过max_val
+                    elif _v > max_val:  # 如果超过max_val
                         # 只结束增长阶段，不改变之前的标记
                         in_growth_phase = False
                         growth_indices = []
@@ -206,7 +215,8 @@ class CanData:
         # 计算信号始末变化量
         for signal_name in signal_names:
             metrics[f"{signal_name}_change"] = (
-                stage.loc[stage.index[-1],signal_name] - stage.loc[stage.index[0],signal_name]
+                stage.loc[stage.index[-1], signal_name]
+                - stage.loc[stage.index[0], signal_name]
             )
 
         return metrics
@@ -218,13 +228,16 @@ class CanData:
         stage["WhlSpdR"] = (stage["WhlSpdRL_122"] + stage["WhlSpdRR_122"]) / 2
         stage["WhlSpd_diff"] = stage["WhlSpdR"] - stage["WhlSpdF"]
         slice_idx = self.get_stage_idxs(stage, {"WhlSpd_diff": (0, np.inf)})
+        # 如果没有满足条件的数据，则返回None
+        if len(slice_idx) == 0:
+            return None
         closest_idx = (
             (
                 stage["timestamps"]
                 - (
                     (
-                        stage.loc[slice_idx[0][0],"timestamps"]
-                        + stage.loc[slice_idx[0][1],"timestamps"]
+                        stage.loc[slice_idx[0][0], "timestamps"]
+                        + stage.loc[slice_idx[0][1], "timestamps"]
                     )
                     / 2
                 )
@@ -306,6 +319,7 @@ class CanData:
         },
     ):
         data = pd.read_csv(file_path)
+        data["original_index"] = data.index  # 保存原始索引
         slice_idx = self.get_stage_idxs(
             data,
             stage_filters,
@@ -324,13 +338,14 @@ class CanData:
                 stage_metrics[signal] = [value]
             # 首次滑转时间
             slip_time = self.get_slip_time(stage)
-            stage_metrics["slip_first_time"] = stage.loc[slip_time, "timestamps"]
-            # 首次滑转电机转速差
-            stage_metrics["monitor_diff"] = self.get_monitor_diff(stage, slip_time)
-            # 首次滑转轮速
-            _whl_metrics = self.get_slip_whlspd(stage, slip_time)
-            for _whl, whl_spd in _whl_metrics.items():
-                stage_metrics[_whl] = whl_spd
+            if slip_time is not None:
+                stage_metrics["slip_first_time"] = stage.loc[slip_time, "timestamps"]
+                # 首次滑转电机转速差
+                stage_metrics["monitor_diff"] = self.get_monitor_diff(stage, slip_time)
+                # 首次滑转轮速
+                _whl_metrics = self.get_slip_whlspd(stage, slip_time)
+                for _whl, whl_spd in _whl_metrics.items():
+                    stage_metrics[_whl] = whl_spd
             # 计算stage内平均油门throttle_mean
             throttle_mean = stage["AccPdlPosn_342"].mean()
             # 将列表[20,30,40,50,60,70,80,90,100]中最接近throttle_mean的值，作为此阶段的油门开度
@@ -363,7 +378,9 @@ class CanData:
 
 
 class CanDecoder:
-    def __init__(self, dbc_url: StringPathLike, can_url: StringPathLike):  # 构造函数，初始化对象
+    def __init__(
+        self, dbc_url: StringPathLike, can_url: StringPathLike
+    ):  # 构造函数，初始化对象
         self.dbc_url = dbc_url  # 将传入的dbc_url参数赋值给对象的dbc_url属性
         self.can_url = can_url  # 将传入的can_url参数赋值给对象的can_url属性
         self.dbcs = self.__load_dbc_multi(
@@ -752,5 +769,14 @@ class CanDecoder:
 
 if __name__ == "__main__":
 
-    candeocder=CanDecoder("/home/p30021181206/uk.dbc","/home/p30021181206/Pictures/share_folder/20250430_SZ_UKEB")
-    candeocder.read_can_files(save_dir="/home/p30021181206/Documents/data/",save_formats=('.csv','.parquet',))
+    candeocder = CanDecoder(
+        "/home/p30021181206/uk.dbc",
+        "/home/p30021181206/Pictures/share_folder/20250430_SZ_UKEB",
+    )
+    candeocder.read_can_files(
+        save_dir="/home/p30021181206/Documents/data/",
+        save_formats=(
+            ".csv",
+            ".parquet",
+        ),
+    )
