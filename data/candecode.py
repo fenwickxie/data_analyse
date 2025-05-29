@@ -1,3 +1,18 @@
+import os
+import platform
+import can
+import cantools
+from typing import List, Dict, Any, Optional, Tuple, TypeAlias, Union
+from cantools.database import Database
+from tqdm import tqdm
+from multiprocessing import Pool
+
+StringPathLike: TypeAlias = Union[str, os.PathLike]
+
+if platform.system() == "Windows":
+    ENCODING = "gbk"
+else:
+    ENCODING = "utf-8"
 class CanDecoder:
     def __init__(
         self, dbc_url: StringPathLike, can_url: StringPathLike
@@ -11,7 +26,7 @@ class CanDecoder:
             can_url
         )  # 调用私有方法__load_can_multi加载can文件，并将结果分别赋值给对象的blf_urls和asc_urls属性
 
-    def __load_dbc_single(self, dbc_url: StringPathLike) -> Tuple[str, Database]:
+    def __load_dbc_single(self, dbc_url: StringPathLike) -> Tuple[StringPathLike, cantools.database.Database]:
         """
         Load a DBC file and return the database object.
         """

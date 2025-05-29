@@ -12,14 +12,8 @@ from itertools import product
 import os
 import numpy as np
 import pandas as pd
-import os
 import platform
-import can
-import cantools
-from typing import List, Dict, Any, Optional, Tuple, TypeAlias, Union
-from cantools.database import Database
-from tqdm import tqdm
-from multiprocessing import Pool
+from typing import TypeAlias, Union
 
 StringPathLike: TypeAlias = Union[str, os.PathLike]
 
